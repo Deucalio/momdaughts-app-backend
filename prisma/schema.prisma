@@ -1,0 +1,129 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions          Session[]
+  notificationPrefs NotificationPreference?
+  shopifyOrders     ShopifyOrder[]
+  cartItems         CartItem[]
+  wishlistItems     WishlistItem[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model ShopifyOrder {
+  id             String   @id @default(cuid())
+  userId         String
+  shopifyOrderId String   @unique
+  status         String
+  totalPrice     Float
+  currency       String
+  placedAt       DateTime
+  paymentMethod  String?
+  discountCodeId String?         
+  discountCode   DiscountCode?  @relation(fields: [discountCodeId], references: [id])
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("shopify_orders")
+}
+
+
+model DiscountCode {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  description    String?
+  discountType   String   // "percentage" or "fixed"
+  discountValue  Float    // e.g., 10 for 10% or 200 for Rs.200 off
+  isExpired       Boolean  @default(false)
+  validFrom      DateTime
+  validUntil     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  orders ShopifyOrder[]
+
+  @@map("discount_codes")
+}
+
+
+model NotificationPreference {
+  id             String  @id @default(cuid())
+  userId         String  @unique
+  orderUpdates   Boolean @default(true)
+  promoPush      Boolean @default(true)
+  newProducts    Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_prefs")
+}
+
+model CartItem {
+  id               String   @id @default(cuid())
+  userId           String
+  shopifyProductId String
+  shopifyVariantId String
+  productTitle     String
+  price            Float
+  quantity         Int      @default(1)
+  addedAt          DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+@@unique([userId, shopifyVariantId], name: "userId_shopifyVariantId")
+
+  @@map("cart_items")
+}
+
+model WishlistItem {
+  id               String   @id @default(cuid())
+  userId           String
+  shopifyProductId String
+  productTitle     String
+  addedAt          DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, shopifyProductId])
+  @@map("wishlist_items")
+}
+
+model EducationalContent {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  content     String
+  category    String   // "skincare", "wellness", etc.
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("educational_content")
+}
