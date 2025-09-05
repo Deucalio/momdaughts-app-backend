@@ -20,8 +20,9 @@ const {
   getAdresses,
   getShopifyDiscounts,
   formatDiscountData,
-  validateSingleDiscountCode,
-    canDiscountsCombine
+    canDiscountsCombine,
+    validateSingleDiscountCodeEnhanced
+
 } = require("./utils/actions");
 
 // Register plugins
@@ -91,6 +92,10 @@ fastify.get("/verify-discount-code", {
         subtotal: {
           type: 'number',
           description: 'Order subtotal for minimum requirement validation'
+        },
+        cartVariants: {
+          type: 'string',
+          description: 'Comma-separated list of product variant IDs in cart (e.g., "gid://shopify/ProductVariant/123,gid://shopify/ProductVariant/456")'
         }
       },
       required: ['codes']
@@ -98,7 +103,7 @@ fastify.get("/verify-discount-code", {
   }
 }, async (request, reply) => {
   try {
-    const { codes, subtotal } = request.query;
+    const { codes, subtotal, cartVariants } = request.query;
     
     if (!codes || typeof codes !== 'string') {
       return reply.status(400).send({
@@ -126,14 +131,19 @@ fastify.get("/verify-discount-code", {
       });
     }
 
+    // Parse cart variants if provided
+    const cartVariantIds = cartVariants 
+      ? cartVariants.split(',').map(id => id.trim()).filter(id => id.length > 0)
+      : [];
+
     request.log.info(`Verifying ${discountCodes.length} discount codes: ${discountCodes.join(', ')}`);
 
     // Fetch all active discounts from Shopify
     const allDiscounts = await getShopifyDiscounts();
     
-    // Validate each discount code individually
+    // Validate each discount code individually with enhanced validation
     const validationResults = discountCodes.map(code => 
-      validateSingleDiscountCode(code, allDiscounts)
+      validateSingleDiscountCodeEnhanced(code, allDiscounts, subtotal, cartVariantIds)
     );
 
     // Separate valid and invalid codes
@@ -184,7 +194,9 @@ fastify.get("/verify-discount-code", {
         validCodes: validCodes.length,
         invalidCodes: invalidCodes.length,
         applicableCodes: applicableCodes.length,
-        canCombineAll: validCodes.length <= 1 || !hasIncompatibleCombinations
+        canCombineAll: validCodes.length <= 1 || !hasIncompatibleCombinations,
+        subtotalProvided: subtotal !== undefined,
+        cartVariantsProvided: cartVariantIds.length > 0
       },
       validDiscounts: validCodes,
       invalidDiscounts: invalidCodes,
@@ -194,7 +206,10 @@ fastify.get("/verify-discount-code", {
         title: discount.title,
         type: discount.type,
         value: discount.value,
-        description: `${discount.code} - ${discount.title} (${discount.value})`
+        description: `${discount.code} - ${discount.title} (${discount.value})`,
+        requiresSpecificProducts: discount.requiresSpecificProducts || false,
+        requiredVariants: discount.requiredVariants || [],
+        minimumSubtotal: discount.minimumSubtotal || null
       })),
       totalDiscount: {
         description: totalDiscountDescription.join(' + '),
@@ -224,7 +239,6 @@ fastify.get("/verify-discount-code", {
     });
   }
 });
-
 
 
 // Get current user profile

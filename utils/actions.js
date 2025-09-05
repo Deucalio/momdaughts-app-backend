@@ -1735,6 +1735,151 @@ function canDiscountsCombine(firstDiscount, secondDiscount) {
 }
 
 
+/**
+ * Enhanced validation function that includes subtotal and product variant checks
+ * @param {string} code - Discount code to validate
+ * @param {Array} allDiscounts - Array of all discount nodes from Shopify
+ * @param {number} subtotal - Order subtotal for minimum requirement validation
+ * @param {Array} cartVariantIds - Array of product variant IDs in the cart
+ * @returns {Object} Enhanced validation result
+ */
+function validateSingleDiscountCodeEnhanced(code, allDiscounts, subtotal, cartVariantIds) {
+  const normalizedInputCode = code.trim().toLowerCase();
+  
+  for (const discountNode of allDiscounts) {
+    const discount = discountNode.codeDiscount;
+    if (!discount || !discount.codes?.nodes) continue;
+
+    const matchingCode = discount.codes.nodes.find(
+      codeNode => codeNode.code.toLowerCase() === normalizedInputCode
+    );
+
+    if (matchingCode) {
+      const usageCount = matchingCode.asyncUsageCount || 0;
+      const usageLimit = discount.usageLimit;
+      const isExpired = discount.endsAt && new Date(discount.endsAt) < new Date();
+      const isLimitReached = usageLimit && usageCount >= usageLimit;
+      const isActive = discount.status === 'ACTIVE' || discount.status === 'active';
+
+      // Check minimum subtotal requirement
+      let isSubtotalValid = true;
+      let minimumSubtotal = null;
+      let subtotalError = null;
+
+      if (discount.minimumRequirement?.greaterThanOrEqualToSubtotal?.amount) {
+        minimumSubtotal = parseFloat(discount.minimumRequirement.greaterThanOrEqualToSubtotal.amount);
+        
+        if (subtotal !== undefined && subtotal !== null) {
+          if (subtotal < minimumSubtotal) {
+            isSubtotalValid = false;
+            subtotalError = `Minimum order amount of ${minimumSubtotal} required. Current subtotal: ${subtotal}`;
+          }
+        } else {
+          // If subtotal is not provided but required, we can't validate properly
+          isSubtotalValid = false;
+          subtotalError = `Subtotal validation required. Minimum amount: ${minimumSubtotal}`;
+        }
+      }
+
+      // Check required product variants
+      let areRequiredVariantsInCart = true;
+      let requiredVariants = [];
+      let variantError = null;
+
+      if (discount.customerGets?.items?.productVariants?.edges && discount.customerGets.items.productVariants.edges.length > 0) {
+        requiredVariants = discount.customerGets.items.productVariants.edges.map(edge => ({
+          id: edge.node.id,
+          title: edge.node.title,
+          displayName: edge.node.displayName
+        }));
+
+        // Check if at least one required variant is in the cart
+        const hasRequiredVariant = requiredVariants.some(variant => 
+          cartVariantIds.includes(variant.id)
+        );
+
+        if (!hasRequiredVariant) {
+          areRequiredVariantsInCart = false;
+          if (cartVariantIds.length === 0) {
+            variantError = `This discount requires specific products in your cart. Required products: ${requiredVariants.map(v => v.displayName).join(', ')}`;
+          } else {
+            variantError = `Required product variants not found in cart. This discount applies to: ${requiredVariants.map(v => v.displayName).join(', ')}`;
+          }
+        }
+      }
+
+      // Determine discount type and value
+      let discountType = 'Unknown';
+      let discountValue = 'N/A';
+      
+      if (discount.__typename === 'DiscountCodeBasic') {
+        discountType = 'Basic Discount';
+        if (discount.customerGets?.value?.percentage) {
+          discountValue = `${discount.customerGets.value.percentage * 100}%`;
+        } else if (discount.customerGets?.value?.amount) {
+          const amount = discount.customerGets.value.amount;
+          discountValue = `${amount.amount} ${amount.currencyCode}`;
+        }
+      } else if (discount.__typename === 'DiscountCodeFreeShipping') {
+        discountType = 'Free Shipping';
+        discountValue = 'Free Shipping';
+      } else if (discount.__typename === 'DiscountCodeBxgy') {
+        discountType = 'Buy X Get Y';
+        const effect = discount.customerGets?.value?.effect;
+        if (effect?.percentage) {
+          discountValue = `${effect.percentage * 100}% off`;
+        } else if (effect?.amount) {
+          discountValue = `${effect.amount.amount} ${effect.amount.currencyCode} off`;
+        }
+      }
+
+      // Overall validity check
+      const isValid = isActive && !isExpired && !isLimitReached && isSubtotalValid && areRequiredVariantsInCart;
+
+      return {
+        found: true,
+        valid: isValid,
+        code: matchingCode.code,
+        discountId: discountNode.id,
+        title: discount.title || 'Untitled Discount',
+        type: discountType,
+        value: discountValue,
+        usageCount: usageCount,
+        usageLimit: usageLimit || null,
+        isActive: isActive,
+        isExpired: isExpired,
+        isLimitReached: isLimitReached,
+        expiresAt: discount.endsAt,
+        minimumSubtotal: minimumSubtotal,
+        isSubtotalValid: isSubtotalValid,
+        requiresSpecificProducts: requiredVariants.length > 0,
+        requiredVariants: requiredVariants,
+        areRequiredVariantsInCart: areRequiredVariantsInCart,
+        combinesWith: discount.combinesWith || {
+          orderDiscounts: false,
+          productDiscounts: false,
+          shippingDiscounts: false
+        },
+        invalidReasons: [
+          ...(!isActive ? ['Discount is not active'] : []),
+          ...(isExpired ? ['Discount has expired'] : []),
+          ...(isLimitReached ? ['Usage limit reached'] : []),
+          ...(!isSubtotalValid && subtotalError ? [subtotalError] : []),
+          ...(!areRequiredVariantsInCart && variantError ? [variantError] : [])
+        ]
+      };
+    }
+  }
+
+  return {
+    found: false,
+    valid: false,
+    code: code,
+    invalidReasons: ['Discount code not found']
+  };
+}
+
+
 module.exports = {
   getProducts,
   getProduct,
@@ -1753,4 +1898,5 @@ module.exports = {
   formatDiscountData,
   validateSingleDiscountCode,
   canDiscountsCombine,
+  validateSingleDiscountCodeEnhanced
 };
