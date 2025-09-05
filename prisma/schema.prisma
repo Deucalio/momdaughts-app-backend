@@ -15,12 +15,16 @@ model User {
   lastName  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  metaData Json?
 
   sessions          Session[]
   notificationPrefs NotificationPreference?
   shopifyOrders     ShopifyOrder[]
   cartItems         CartItem[]
   wishlistItems     WishlistItem[]
+  iplProfiles       IplProfile[]
+  iplSessions       IplSession[]
+  ShippingAddresses ShippingAddress[]
 
   @@map("users")
 }
@@ -47,11 +51,79 @@ model ShopifyOrder {
   paymentMethod  String?
   discountCodeId String?         
   discountCode   DiscountCode?  @relation(fields: [discountCodeId], references: [id])
+    metaData      Json?    // Stores shipping and billing addresses as JSON
+
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("shopify_orders")
 }
+
+
+model ShippingAddress {
+  id         String   @id @default(cuid())
+  firstName  String?
+  lastName   String?
+  phone      String?
+  address1   String?
+  address2   String?
+  city       String?
+  province   String?
+  postalCode String?
+  country    String?
+  isDefault  Boolean  @default(false)
+
+  type       String?  // "Home" or "Work"
+
+  // Relation to User
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("shipping_addresses")
+}
+
+model IplProfile {
+  id             String       @id @default(cuid())
+  userId         String       @map("user_id")  // <- Add this mapping
+  device         String
+  skinTone       String
+  hairType       String
+  treatmentAreas Json         // e.g. ["Face", "Legs"]
+  startDate      DateTime
+  currentPhase   String       // "weekly", "biweekly", "maintenance"
+
+  // Relations
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions       IplSession[]
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@map("ipl_profiles")
+}
+
+model IplSession {
+  id             String     @id @default(cuid())
+  userId         String
+  profileId      String
+  date           DateTime
+  bodyArea       String
+  intensityLevel Int
+  metaData               String?
+
+  // Relations
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile        IplProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@map("ipl_sessions")
+}
+
 
 
 model DiscountCode {
@@ -106,12 +178,11 @@ model WishlistItem {
   id               String   @id @default(cuid())
   userId           String
   shopifyProductId String
-  productTitle     String
+  shopifyVariantId     String
   addedAt          DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, shopifyProductId])
   @@map("wishlist_items")
 }
 
