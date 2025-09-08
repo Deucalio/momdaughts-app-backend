@@ -20,9 +20,8 @@ const {
   getAdresses,
   getShopifyDiscounts,
   formatDiscountData,
-    canDiscountsCombine,
-    validateSingleDiscountCodeEnhanced
-
+  canDiscountsCombine,
+  validateSingleDiscountCodeEnhanced,
 } = require("./utils/actions");
 
 // Register plugins
@@ -65,181 +64,292 @@ fastify.get("/api", async (req, res) => {
   return res.status(200).type("text/html").send(html);
 });
 
+// GET Total Orders Count
+fastify.get(
+  "/total-orders",
+  { preHandler: [fastify.authenticate] },
+  async (request, reply) => {
+    try {
+      // const totalOrders = await prisma.order.count();
+      // reply.send({ totalOrders });
+    } catch (error) {
+      request.log.error(error);
+      reply.status(500).send({ error: "Failed to fetch total orders" });
+    }
+  }
+);
+
+fastify.get("/token", async (request, reply) => {
+  const email = request.query.email;
+  const token = await prisma.user.findFirst({
+    where: {
+      email: email,
+    },
+    orderBy: {
+      sessions: {
+        _count: "desc",
+      },
+    },
+
+    select: {
+      sessions: true,
+    },
+  });
+  console.log(token);
+
+  const a = await fetch(
+    `http://localhost:3000/session/${
+      token.sessions[token.sessions.length - 1].id
+    }`
+  );
+  const b = await a.json();
+
+  return reply.send(b);
+});
+
+// GET Total Wishlist Items Count
+fastify.get(
+  "/total-wishlist-items-count",
+  { preHandler: [fastify.authenticate] },
+  async (request, reply) => {
+    const start = Date.now();
+    const { userId } = request.user;
+    try {
+      const totalWishlistItems = await prisma.wishlistItem.count({
+        where: {
+          userId: userId,
+        },
+      });
+      reply.send({ count: totalWishlistItems });
+    } catch (error) {
+      request.log.error(error);
+      reply.status(500).send({ error: "Failed to fetch total wishlist items" });
+    } finally {
+      const duration = Date.now() - start;
+      console.log(`GET /total-wishlist-items-count processed in ${duration}ms`);
+    }
+  }
+);
 
 // GET ALL DISCOUNTS
-fastify.get("/discounts", { preHandler: [fastify.authenticate] }, async (request, reply) => {
-  try {
-    const discounts = await getShopifyDiscounts();
-    const formattedData = formatDiscountData(discounts);
-    reply.send({ discounts: discounts });
-  } catch (error) {
-    request.log.error(error);
-    reply.status(500).send({ error: "Failed to fetch discounts" });
+fastify.get(
+  "/discounts",
+  { preHandler: [fastify.authenticate] },
+  async (request, reply) => {
+    try {
+      const discounts = await getShopifyDiscounts();
+      const formattedData = formatDiscountData(discounts);
+      reply.send({ discounts: discounts });
+    } catch (error) {
+      request.log.error(error);
+      reply.status(500).send({ error: "Failed to fetch discounts" });
+    }
   }
-});
+);
 
-
-fastify.get("/verify-discount-code", { 
-  preHandler: [fastify.authenticate],
-  schema: {
-    querystring: {
-      type: 'object',
-      properties: {
-        codes: {
-          type: 'string',
-          description: 'Comma-separated list of discount codes to verify (e.g., "CODE1,CODE2,CODE3")'
+fastify.get(
+  "/verify-discount-code",
+  {
+    preHandler: [fastify.authenticate],
+    schema: {
+      querystring: {
+        type: "object",
+        properties: {
+          codes: {
+            type: "string",
+            description:
+              'Comma-separated list of discount codes to verify (e.g., "CODE1,CODE2,CODE3")',
+          },
+          subtotal: {
+            type: "number",
+            description: "Order subtotal for minimum requirement validation",
+          },
+          cartVariants: {
+            type: "string",
+            description:
+              'Comma-separated list of product variant IDs in cart (e.g., "gid://shopify/ProductVariant/123,gid://shopify/ProductVariant/456")',
+          },
         },
-        subtotal: {
-          type: 'number',
-          description: 'Order subtotal for minimum requirement validation'
-        },
-        cartVariants: {
-          type: 'string',
-          description: 'Comma-separated list of product variant IDs in cart (e.g., "gid://shopify/ProductVariant/123,gid://shopify/ProductVariant/456")'
-        }
+        required: ["codes"],
       },
-      required: ['codes']
-    }
-  }
-}, async (request, reply) => {
-  try {
-    const { codes, subtotal, cartVariants } = request.query;
-    
-    if (!codes || typeof codes !== 'string') {
-      return reply.status(400).send({
-        success: false,
-        error: "Missing or invalid 'codes' parameter. Provide comma-separated discount codes."
-      });
-    }
+    },
+  },
+  async (request, reply) => {
+    try {
+      const { codes, subtotal, cartVariants } = request.query;
 
-    // Parse and clean discount codes
-    const discountCodes = codes.split(',')
-      .map(code => code.trim())
-      .filter(code => code.length > 0);
+      if (!codes || typeof codes !== "string") {
+        return reply.status(400).send({
+          success: false,
+          error:
+            "Missing or invalid 'codes' parameter. Provide comma-separated discount codes.",
+        });
+      }
 
-    if (discountCodes.length === 0) {
-      return reply.status(400).send({
-        success: false,
-        error: "No valid discount codes provided"
-      });
-    }
+      // Parse and clean discount codes
+      const discountCodes = codes
+        .split(",")
+        .map((code) => code.trim())
+        .filter((code) => code.length > 0);
 
-    if (discountCodes.length > 5) {
-      return reply.status(400).send({
-        success: false,
-        error: "Maximum 5 discount codes allowed per request"
-      });
-    }
+      if (discountCodes.length === 0) {
+        return reply.status(400).send({
+          success: false,
+          error: "No valid discount codes provided",
+        });
+      }
 
-    // Parse cart variants if provided
-    const cartVariantIds = cartVariants 
-      ? cartVariants.split(',').map(id => id.trim()).filter(id => id.length > 0)
-      : [];
+      if (discountCodes.length > 5) {
+        return reply.status(400).send({
+          success: false,
+          error: "Maximum 5 discount codes allowed per request",
+        });
+      }
 
-    request.log.info(`Verifying ${discountCodes.length} discount codes: ${discountCodes.join(', ')}`);
+      // Parse cart variants if provided
+      const cartVariantIds = cartVariants
+        ? cartVariants
+            .split(",")
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0)
+        : [];
 
-    // Fetch all active discounts from Shopify
-    const allDiscounts = await getShopifyDiscounts();
-    
-    // Validate each discount code individually with enhanced validation
-    const validationResults = discountCodes.map(code => 
-      validateSingleDiscountCodeEnhanced(code, allDiscounts, subtotal, cartVariantIds)
-    );
+      request.log.info(
+        `Verifying ${discountCodes.length} discount codes: ${discountCodes.join(
+          ", "
+        )}`
+      );
 
-    // Separate valid and invalid codes
-    const validCodes = validationResults.filter(result => result.valid);
-    const invalidCodes = validationResults.filter(result => !result.valid);
+      // Fetch all active discounts from Shopify
+      const allDiscounts = await getShopifyDiscounts();
 
-    // Check combinations for valid codes
-    const combinationResults = [];
-    
-    if (validCodes.length > 1) {
-      for (let i = 0; i < validCodes.length; i++) {
-        for (let j = i + 1; j < validCodes.length; j++) {
-          const combinationResult = canDiscountsCombine(validCodes[i], validCodes[j]);
-          combinationResults.push({
-            firstCode: validCodes[i].code,
-            secondCode: validCodes[j].code,
-            ...combinationResult
-          });
+      // Validate each discount code individually with enhanced validation
+      const validationResults = discountCodes.map((code) =>
+        validateSingleDiscountCodeEnhanced(
+          code,
+          allDiscounts,
+          subtotal,
+          cartVariantIds
+        )
+      );
+
+      // Separate valid and invalid codes
+      const validCodes = validationResults.filter((result) => result.valid);
+      const invalidCodes = validationResults.filter((result) => !result.valid);
+
+      // Check combinations for valid codes
+      const combinationResults = [];
+
+      if (validCodes.length > 1) {
+        for (let i = 0; i < validCodes.length; i++) {
+          for (let j = i + 1; j < validCodes.length; j++) {
+            const combinationResult = canDiscountsCombine(
+              validCodes[i],
+              validCodes[j]
+            );
+            combinationResults.push({
+              firstCode: validCodes[i].code,
+              secondCode: validCodes[j].code,
+              ...combinationResult,
+            });
+          }
         }
       }
+
+      // Calculate total discount value (simplified calculation)
+      let totalDiscountValue = 0;
+      let totalDiscountDescription = [];
+
+      validCodes.forEach((discount) => {
+        if (
+          discount.type === "Basic Discount" &&
+          discount.value.includes("%")
+        ) {
+          const percentage = parseFloat(discount.value.replace("%", ""));
+          totalDiscountDescription.push(`${discount.code}: ${percentage}% off`);
+        } else if (discount.type === "Free Shipping") {
+          totalDiscountDescription.push(`${discount.code}: Free Shipping`);
+        } else {
+          totalDiscountDescription.push(`${discount.code}: ${discount.value}`);
+        }
+      });
+
+      // Check if any combinations are incompatible
+      const hasIncompatibleCombinations = combinationResults.some(
+        (result) => !result.canCombine
+      );
+      const applicableCodes = hasIncompatibleCombinations
+        ? [validCodes[0]]
+        : validCodes;
+
+      // Build response
+      const response = {
+        success: true,
+        timestamp: new Date().toISOString(),
+        summary: {
+          totalCodesRequested: discountCodes.length,
+          validCodes: validCodes.length,
+          invalidCodes: invalidCodes.length,
+          applicableCodes: applicableCodes.length,
+          canCombineAll: validCodes.length <= 1 || !hasIncompatibleCombinations,
+          subtotalProvided: subtotal !== undefined,
+          cartVariantsProvided: cartVariantIds.length > 0,
+        },
+        validDiscounts: validCodes,
+        invalidDiscounts: invalidCodes,
+        combinationAnalysis: combinationResults,
+        applicableDiscounts: applicableCodes.map((discount) => ({
+          code: discount.code,
+          title: discount.title,
+          type: discount.type,
+          value: discount.value,
+          description: `${discount.code} - ${discount.title} (${discount.value})`,
+          requiresSpecificProducts: discount.requiresSpecificProducts || false,
+          requiredVariants: discount.requiredVariants || [],
+          minimumSubtotal: discount.minimumSubtotal || null,
+        })),
+        totalDiscount: {
+          description: totalDiscountDescription.join(" + "),
+          applicableCount: applicableCodes.length,
+        },
+        warnings: [
+          ...(hasIncompatibleCombinations
+            ? [
+                "Some discount codes cannot be combined. Only the first valid discount will be applied.",
+              ]
+            : []),
+          ...(invalidCodes.length > 0
+            ? [
+                `${invalidCodes.length} discount code(s) are invalid and will be ignored.`,
+              ]
+            : []),
+        ],
+      };
+
+      request.log.info(
+        `Discount verification completed: ${applicableCodes.length} applicable out of ${discountCodes.length} requested`
+      );
+
+      reply.send(response);
+    } catch (error) {
+      request.log.error(
+        {
+          error: error.message,
+          stack: error.stack,
+          query: request.query,
+        },
+        "Failed to verify discount codes"
+      );
+
+      reply.status(500).send({
+        success: false,
+        error: "Failed to verify discount codes",
+        details:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
+      });
     }
-
-    // Calculate total discount value (simplified calculation)
-    let totalDiscountValue = 0;
-    let totalDiscountDescription = [];
-
-    validCodes.forEach(discount => {
-      if (discount.type === 'Basic Discount' && discount.value.includes('%')) {
-        const percentage = parseFloat(discount.value.replace('%', ''));
-        totalDiscountDescription.push(`${discount.code}: ${percentage}% off`);
-      } else if (discount.type === 'Free Shipping') {
-        totalDiscountDescription.push(`${discount.code}: Free Shipping`);
-      } else {
-        totalDiscountDescription.push(`${discount.code}: ${discount.value}`);
-      }
-    });
-
-    // Check if any combinations are incompatible
-    const hasIncompatibleCombinations = combinationResults.some(result => !result.canCombine);
-    const applicableCodes = hasIncompatibleCombinations ? [validCodes[0]] : validCodes;
-
-    // Build response
-    const response = {
-      success: true,
-      timestamp: new Date().toISOString(),
-      summary: {
-        totalCodesRequested: discountCodes.length,
-        validCodes: validCodes.length,
-        invalidCodes: invalidCodes.length,
-        applicableCodes: applicableCodes.length,
-        canCombineAll: validCodes.length <= 1 || !hasIncompatibleCombinations,
-        subtotalProvided: subtotal !== undefined,
-        cartVariantsProvided: cartVariantIds.length > 0
-      },
-      validDiscounts: validCodes,
-      invalidDiscounts: invalidCodes,
-      combinationAnalysis: combinationResults,
-      applicableDiscounts: applicableCodes.map(discount => ({
-        code: discount.code,
-        title: discount.title,
-        type: discount.type,
-        value: discount.value,
-        description: `${discount.code} - ${discount.title} (${discount.value})`,
-        requiresSpecificProducts: discount.requiresSpecificProducts || false,
-        requiredVariants: discount.requiredVariants || [],
-        minimumSubtotal: discount.minimumSubtotal || null
-      })),
-      totalDiscount: {
-        description: totalDiscountDescription.join(' + '),
-        applicableCount: applicableCodes.length
-      },
-      warnings: [
-        ...(hasIncompatibleCombinations ? ['Some discount codes cannot be combined. Only the first valid discount will be applied.'] : []),
-        ...(invalidCodes.length > 0 ? [`${invalidCodes.length} discount code(s) are invalid and will be ignored.`] : [])
-      ]
-    };
-
-    request.log.info(`Discount verification completed: ${applicableCodes.length} applicable out of ${discountCodes.length} requested`);
-
-    reply.send(response);
-
-  } catch (error) {
-    request.log.error({
-      error: error.message,
-      stack: error.stack,
-      query: request.query
-    }, 'Failed to verify discount codes');
-    
-    reply.status(500).send({ 
-      success: false,
-      error: "Failed to verify discount codes",
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
   }
-});
-
+);
 
 // Get current user profile
 fastify.get(
@@ -349,6 +459,7 @@ fastify.get(
     const collectionId = request.params.id;
     try {
       const collection = await getCollection(collectionId);
+      console.log("collection", collection);
       reply.send({ collection: collection });
     } catch (error) {
       console.log("Error: ", error);
@@ -356,7 +467,9 @@ fastify.get(
       reply.status(500).send({ error: "Database error" });
     } finally {
       const duration = Date.now() - start;
-      console.log(`GET /collections/:id processed in ${duration}ms`);
+      console.log(
+        `GET /collections/:${collectionId} processed in ${duration}ms`
+      );
     }
   }
 );
@@ -385,23 +498,25 @@ fastify.get(
   { preHandler: [fastify.authenticate] },
   async (request, reply) => {
     const start = Date.now();
-    const {collectionsIds} = request.query
-      console.log("collectionsIds", collectionsIds)
+    const { collectionsIds } = request.query;
+    console.log("collectionsIds", collectionsIds);
 
     try {
       const collections = await getCollections(collectionsIds);
-      if (!collectionsIds){
+      if (!collectionsIds) {
         return reply.send({ collections: collections });
       }
       // return reply.send({ collections: collections.data.nodes });
-      const updatedCollections = collections.data.nodes.map(col => {
-        const c = col
-        const activeProductsItemsCount = c.products.nodes.filter(s => s.status.toLowerCase() !== "draft").length
+      const updatedCollections = collections.data.nodes.map((col) => {
+        const c = col;
+        const activeProductsItemsCount = c.products.nodes.filter(
+          (s) => s.status.toLowerCase() !== "draft"
+        ).length;
         return {
           activeProductsItemsCount,
           ...c,
-        }
-      })  
+        };
+      });
       reply.send({ collections: updatedCollections });
     } catch (error) {
       console.log("Error: ", error);
@@ -507,47 +622,52 @@ fastify.get(
   }
 );
 
-fastify.get("/addresses", { preHandler: [fastify.authenticate] }, async (request, reply) => {
-  const start = Date.now();
-  const { userId } = request.user;
-  try {
-    const addresses = await prisma.shippingAddress.findMany({
-      where: {
-        userId
-      }
-    });
-    reply.send({ addresses });
-  } catch (error) {
-    request.log.error(error);
-    reply.status(500).send({ error: "Database error" });
-  } finally {
-    const end = Date.now();
-    const duration = end - start;
-    console.log(`GET /addresses processed in ${duration}ms`);
+fastify.get(
+  "/addresses",
+  { preHandler: [fastify.authenticate] },
+  async (request, reply) => {
+    const start = Date.now();
+    const { userId } = request.user;
+    try {
+      const addresses = await prisma.shippingAddress.findMany({
+        where: {
+          userId,
+        },
+      });
+      reply.send({ addresses });
+    } catch (error) {
+      request.log.error(error);
+      reply.status(500).send({ error: "Database error" });
+    } finally {
+      const end = Date.now();
+      const duration = end - start;
+      console.log(`GET /addresses processed in ${duration}ms`);
+    }
   }
-});
+);
 
-
-fastify.get("/address/:id", { preHandler: [fastify.authenticate] }, async (request, reply) => {
-  const start = Date.now();
-  try {
-    const addr = await prisma.shippingAddress.findUnique({
-      where: {
-        id: request.params.id
-      }
-    })
-    reply.send({ address: addr });
-  } catch (error) {
-    request.log.error(error);
-    reply.status(500).send({ error: "Database error" });
-  } finally {
-    const end = Date.now();
-    const duration = end - start;
-    console.log(`GET /address/:id processed in ${duration}ms`);
+fastify.get(
+  "/address/:id",
+  { preHandler: [fastify.authenticate] },
+  async (request, reply) => {
+    const start = Date.now();
+    try {
+      const addr = await prisma.shippingAddress.findUnique({
+        where: {
+          id: request.params.id,
+        },
+      });
+      reply.send({ address: addr });
+    } catch (error) {
+      request.log.error(error);
+      reply.status(500).send({ error: "Database error" });
+    } finally {
+      const end = Date.now();
+      const duration = end - start;
+      console.log(`GET /address/:id processed in ${duration}ms`);
+    }
   }
-});
-
-
+);
 
 // Token verification endpoint
 fastify.get(
@@ -947,7 +1067,6 @@ fastify.post(
   }
 );
 
-
 // Add Shipping Address
 fastify.post(
   "/add-shipping-address",
@@ -956,28 +1075,30 @@ fastify.post(
     const start = Date.now();
     try {
       const { userId } = request.user;
-      const { address } = request.body;
-      address.isDefault = address.useCurrentLocation
-      console.log(address);
-      
+      const address  = request.body;
+      address.isDefault = address.useCurrentLocation ? true : false;
+      address.type = address.addressCategory
+      delete address.useCurrentLocation;
+      delete address.addressCategory;
+
       // If this address is being set as default, update all other addresses to not be default
       if (address.isDefault === true) {
         await prisma.shippingAddress.updateMany({
-          where: { 
+          where: {
             userId: userId,
-            isDefault: true 
+            isDefault: true,
           },
-          data: { isDefault: false }
+          data: { isDefault: false },
         });
       }
-      
+
       const shippingAddress = await prisma.shippingAddress.create({
         data: {
           ...address,
           userId: userId,
         },
       });
-      
+
       reply.send({ success: true, shippingAddress: shippingAddress });
     } catch (error) {
       console.log("Error: ", error);
@@ -1408,7 +1529,6 @@ fastify.delete(
   }
 );
 
-
 // Delete Address
 fastify.delete(
   "/address/:addressId",
@@ -1492,7 +1612,6 @@ fastify.put(
   }
 );
 
-
 // Update Address
 fastify.put(
   "/address/:addressId",
@@ -1502,22 +1621,22 @@ fastify.put(
     const { addressId } = request.params;
     const address = request.body;
     const { userId } = request.user;
-    
-    address.isDefault = address.useCurrentLocation
+
+    address.isDefault = address.useCurrentLocation;
     console.log(address);
     try {
       // If this address is being set as default, update all other addresses to not be default
       if (address.isDefault === true) {
         await prisma.shippingAddress.updateMany({
-          where: { 
+          where: {
             userId: userId,
             isDefault: true,
-            id: { not: addressId } // Exclude the current address being updated
+            id: { not: addressId }, // Exclude the current address being updated
           },
-          data: { isDefault: false }
+          data: { isDefault: false },
         });
       }
-      
+
       await prisma.shippingAddress.update({
         where: { id: addressId },
         data: {
@@ -1534,7 +1653,7 @@ fastify.put(
           type: address.type, // Include type in the update
         },
       });
-      
+
       reply.send({ message: "Address updated successfully" });
     } catch (error) {
       request.log.error(error);
@@ -1570,7 +1689,6 @@ const start = async () => {
 };
 
 start();
-
 
 const query = `
   query {
