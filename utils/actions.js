@@ -1590,39 +1590,41 @@ function formatDiscountData(rawData) {
 
 function validateSingleDiscountCode(code, allDiscounts) {
   const normalizedInputCode = code.trim().toLowerCase();
-  
+
   for (const discountNode of allDiscounts) {
     const discount = discountNode.codeDiscount;
     if (!discount || !discount.codes?.nodes) continue;
 
     const matchingCode = discount.codes.nodes.find(
-      codeNode => codeNode.code.toLowerCase() === normalizedInputCode
+      (codeNode) => codeNode.code.toLowerCase() === normalizedInputCode
     );
 
     if (matchingCode) {
       const usageCount = matchingCode.asyncUsageCount || 0;
       const usageLimit = discount.usageLimit;
-      const isExpired = discount.endsAt && new Date(discount.endsAt) < new Date();
+      const isExpired =
+        discount.endsAt && new Date(discount.endsAt) < new Date();
       const isLimitReached = usageLimit && usageCount >= usageLimit;
-      const isActive = discount.status === 'ACTIVE' || discount.status === 'active';
+      const isActive =
+        discount.status === "ACTIVE" || discount.status === "active";
 
       // Determine discount type and value
-      let discountType = 'Unknown';
-      let discountValue = 'N/A';
-      
-      if (discount.__typename === 'DiscountCodeBasic') {
-        discountType = 'Basic Discount';
+      let discountType = "Unknown";
+      let discountValue = "N/A";
+
+      if (discount.__typename === "DiscountCodeBasic") {
+        discountType = "Basic Discount";
         if (discount.customerGets?.value?.percentage) {
           discountValue = `${discount.customerGets.value.percentage}%`;
         } else if (discount.customerGets?.value?.amount) {
           const amount = discount.customerGets.value.amount;
           discountValue = `${amount.amount} ${amount.currencyCode}`;
         }
-      } else if (discount.__typename === 'DiscountCodeFreeShipping') {
-        discountType = 'Free Shipping';
-        discountValue = 'Free Shipping';
-      } else if (discount.__typename === 'DiscountCodeBxgy') {
-        discountType = 'Buy X Get Y';
+      } else if (discount.__typename === "DiscountCodeFreeShipping") {
+        discountType = "Free Shipping";
+        discountValue = "Free Shipping";
+      } else if (discount.__typename === "DiscountCodeBxgy") {
+        discountType = "Buy X Get Y";
         const effect = discount.customerGets?.value?.effect;
         if (effect?.percentage) {
           discountValue = `${effect.percentage}% off`;
@@ -1636,7 +1638,7 @@ function validateSingleDiscountCode(code, allDiscounts) {
         valid: isActive && !isExpired && !isLimitReached,
         code: matchingCode.code,
         discountId: discountNode.id,
-        title: discount.title || 'Untitled Discount',
+        title: discount.title || "Untitled Discount",
         type: discountType,
         value: discountValue,
         usageCount: usageCount,
@@ -1648,13 +1650,13 @@ function validateSingleDiscountCode(code, allDiscounts) {
         combinesWith: discount.combinesWith || {
           orderDiscounts: false,
           productDiscounts: false,
-          shippingDiscounts: false
+          shippingDiscounts: false,
         },
         invalidReasons: [
-          ...(!isActive ? ['Discount is not active'] : []),
-          ...(isExpired ? ['Discount has expired'] : []),
-          ...(isLimitReached ? ['Usage limit reached'] : [])
-        ]
+          ...(!isActive ? ["Discount is not active"] : []),
+          ...(isExpired ? ["Discount has expired"] : []),
+          ...(isLimitReached ? ["Usage limit reached"] : []),
+        ],
       };
     }
   }
@@ -1663,7 +1665,7 @@ function validateSingleDiscountCode(code, allDiscounts) {
     found: false,
     valid: false,
     code: code,
-    invalidReasons: ['Discount code not found']
+    invalidReasons: ["Discount code not found"],
   };
 }
 
@@ -1677,7 +1679,7 @@ function canDiscountsCombine(firstDiscount, secondDiscount) {
   if (!firstDiscount.valid || !secondDiscount.valid) {
     return {
       canCombine: false,
-      reason: 'One or both discount codes are invalid'
+      reason: "One or both discount codes are invalid",
     };
   }
 
@@ -1685,7 +1687,7 @@ function canDiscountsCombine(firstDiscount, secondDiscount) {
   if (firstDiscount.code.toLowerCase() === secondDiscount.code.toLowerCase()) {
     return {
       canCombine: false,
-      reason: 'Cannot use the same discount code multiple times'
+      reason: "Cannot use the same discount code multiple times",
     };
   }
 
@@ -1698,21 +1700,21 @@ function canDiscountsCombine(firstDiscount, secondDiscount) {
 
   // Basic business rules for discount combination
   const combinations = {
-    'Basic Discount': {
-      'Basic Discount': first.orderDiscounts && second.orderDiscounts,
-      'Free Shipping': first.shippingDiscounts && second.orderDiscounts,
-      'Buy X Get Y': first.productDiscounts && second.orderDiscounts
+    "Basic Discount": {
+      "Basic Discount": first.orderDiscounts && second.orderDiscounts,
+      "Free Shipping": first.shippingDiscounts && second.orderDiscounts,
+      "Buy X Get Y": first.productDiscounts && second.orderDiscounts,
     },
-    'Free Shipping': {
-      'Basic Discount': first.orderDiscounts && second.shippingDiscounts,
-      'Free Shipping': first.shippingDiscounts && second.shippingDiscounts,
-      'Buy X Get Y': first.productDiscounts && second.shippingDiscounts
+    "Free Shipping": {
+      "Basic Discount": first.orderDiscounts && second.shippingDiscounts,
+      "Free Shipping": first.shippingDiscounts && second.shippingDiscounts,
+      "Buy X Get Y": first.productDiscounts && second.shippingDiscounts,
     },
-    'Buy X Get Y': {
-      'Basic Discount': first.orderDiscounts && second.productDiscounts,
-      'Free Shipping': first.shippingDiscounts && second.productDiscounts,
-      'Buy X Get Y': first.productDiscounts && second.productDiscounts
-    }
+    "Buy X Get Y": {
+      "Basic Discount": first.orderDiscounts && second.productDiscounts,
+      "Free Shipping": first.shippingDiscounts && second.productDiscounts,
+      "Buy X Get Y": first.productDiscounts && second.productDiscounts,
+    },
   };
 
   const canCombine = combinations[firstType]?.[secondType] || false;
@@ -1723,17 +1725,16 @@ function canDiscountsCombine(firstDiscount, secondDiscount) {
       reason: `${firstType} and ${secondType} discounts cannot be combined based on their combination settings`,
       details: {
         firstCombinesWith: first,
-        secondCombinesWith: second
-      }
+        secondCombinesWith: second,
+      },
     };
   }
 
   return {
     canCombine: true,
-    reason: 'Discount codes can be successfully combined'
+    reason: "Discount codes can be successfully combined",
   };
 }
-
 
 /**
  * Enhanced validation function that includes subtotal and product variant checks
@@ -1743,23 +1744,30 @@ function canDiscountsCombine(firstDiscount, secondDiscount) {
  * @param {Array} cartVariantIds - Array of product variant IDs in the cart
  * @returns {Object} Enhanced validation result
  */
-function validateSingleDiscountCodeEnhanced(code, allDiscounts, subtotal, cartVariantIds) {
+function validateSingleDiscountCodeEnhanced(
+  code,
+  allDiscounts,
+  subtotal,
+  cartVariantIds
+) {
   const normalizedInputCode = code.trim().toLowerCase();
-  
+
   for (const discountNode of allDiscounts) {
     const discount = discountNode.codeDiscount;
     if (!discount || !discount.codes?.nodes) continue;
 
     const matchingCode = discount.codes.nodes.find(
-      codeNode => codeNode.code.toLowerCase() === normalizedInputCode
+      (codeNode) => codeNode.code.toLowerCase() === normalizedInputCode
     );
 
     if (matchingCode) {
       const usageCount = matchingCode.asyncUsageCount || 0;
       const usageLimit = discount.usageLimit;
-      const isExpired = discount.endsAt && new Date(discount.endsAt) < new Date();
+      const isExpired =
+        discount.endsAt && new Date(discount.endsAt) < new Date();
       const isLimitReached = usageLimit && usageCount >= usageLimit;
-      const isActive = discount.status === 'ACTIVE' || discount.status === 'active';
+      const isActive =
+        discount.status === "ACTIVE" || discount.status === "active";
 
       // Check minimum subtotal requirement
       let isSubtotalValid = true;
@@ -1767,8 +1775,10 @@ function validateSingleDiscountCodeEnhanced(code, allDiscounts, subtotal, cartVa
       let subtotalError = null;
 
       if (discount.minimumRequirement?.greaterThanOrEqualToSubtotal?.amount) {
-        minimumSubtotal = parseFloat(discount.minimumRequirement.greaterThanOrEqualToSubtotal.amount);
-        
+        minimumSubtotal = parseFloat(
+          discount.minimumRequirement.greaterThanOrEqualToSubtotal.amount
+        );
+
         if (subtotal !== undefined && subtotal !== null) {
           if (subtotal < minimumSubtotal) {
             isSubtotalValid = false;
@@ -1786,45 +1796,53 @@ function validateSingleDiscountCodeEnhanced(code, allDiscounts, subtotal, cartVa
       let requiredVariants = [];
       let variantError = null;
 
-      if (discount.customerGets?.items?.productVariants?.edges && discount.customerGets.items.productVariants.edges.length > 0) {
-        requiredVariants = discount.customerGets.items.productVariants.edges.map(edge => ({
-          id: edge.node.id,
-          title: edge.node.title,
-          displayName: edge.node.displayName
-        }));
+      if (
+        discount.customerGets?.items?.productVariants?.edges &&
+        discount.customerGets.items.productVariants.edges.length > 0
+      ) {
+        requiredVariants =
+          discount.customerGets.items.productVariants.edges.map((edge) => ({
+            id: edge.node.id,
+            title: edge.node.title,
+            displayName: edge.node.displayName,
+          }));
 
         // Check if at least one required variant is in the cart
-        const hasRequiredVariant = requiredVariants.some(variant => 
+        const hasRequiredVariant = requiredVariants.some((variant) =>
           cartVariantIds.includes(variant.id)
         );
 
         if (!hasRequiredVariant) {
           areRequiredVariantsInCart = false;
           if (cartVariantIds.length === 0) {
-            variantError = `This discount requires specific products in your cart. Required products: ${requiredVariants.map(v => v.displayName).join(', ')}`;
+            variantError = `This discount requires specific products in your cart. Required products: ${requiredVariants
+              .map((v) => v.displayName)
+              .join(", ")}`;
           } else {
-            variantError = `Required product variants not found in cart. This discount applies to: ${requiredVariants.map(v => v.displayName).join(', ')}`;
+            variantError = `Required product variants not found in cart. This discount applies to: ${requiredVariants
+              .map((v) => v.displayName)
+              .join(", ")}`;
           }
         }
       }
 
       // Determine discount type and value
-      let discountType = 'Unknown';
-      let discountValue = 'N/A';
-      
-      if (discount.__typename === 'DiscountCodeBasic') {
-        discountType = 'Basic Discount';
+      let discountType = "Unknown";
+      let discountValue = "N/A";
+
+      if (discount.__typename === "DiscountCodeBasic") {
+        discountType = "Basic Discount";
         if (discount.customerGets?.value?.percentage) {
           discountValue = `${discount.customerGets.value.percentage * 100}%`;
         } else if (discount.customerGets?.value?.amount) {
           const amount = discount.customerGets.value.amount;
           discountValue = `${amount.amount} ${amount.currencyCode}`;
         }
-      } else if (discount.__typename === 'DiscountCodeFreeShipping') {
-        discountType = 'Free Shipping';
-        discountValue = 'Free Shipping';
-      } else if (discount.__typename === 'DiscountCodeBxgy') {
-        discountType = 'Buy X Get Y';
+      } else if (discount.__typename === "DiscountCodeFreeShipping") {
+        discountType = "Free Shipping";
+        discountValue = "Free Shipping";
+      } else if (discount.__typename === "DiscountCodeBxgy") {
+        discountType = "Buy X Get Y";
         const effect = discount.customerGets?.value?.effect;
         if (effect?.percentage) {
           discountValue = `${effect.percentage * 100}% off`;
@@ -1834,14 +1852,19 @@ function validateSingleDiscountCodeEnhanced(code, allDiscounts, subtotal, cartVa
       }
 
       // Overall validity check
-      const isValid = isActive && !isExpired && !isLimitReached && isSubtotalValid && areRequiredVariantsInCart;
+      const isValid =
+        isActive &&
+        !isExpired &&
+        !isLimitReached &&
+        isSubtotalValid &&
+        areRequiredVariantsInCart;
 
       return {
         found: true,
         valid: isValid,
         code: matchingCode.code,
         discountId: discountNode.id,
-        title: discount.title || 'Untitled Discount',
+        title: discount.title || "Untitled Discount",
         type: discountType,
         value: discountValue,
         usageCount: usageCount,
@@ -1858,15 +1881,15 @@ function validateSingleDiscountCodeEnhanced(code, allDiscounts, subtotal, cartVa
         combinesWith: discount.combinesWith || {
           orderDiscounts: false,
           productDiscounts: false,
-          shippingDiscounts: false
+          shippingDiscounts: false,
         },
         invalidReasons: [
-          ...(!isActive ? ['Discount is not active'] : []),
-          ...(isExpired ? ['Discount has expired'] : []),
-          ...(isLimitReached ? ['Usage limit reached'] : []),
+          ...(!isActive ? ["Discount is not active"] : []),
+          ...(isExpired ? ["Discount has expired"] : []),
+          ...(isLimitReached ? ["Usage limit reached"] : []),
           ...(!isSubtotalValid && subtotalError ? [subtotalError] : []),
-          ...(!areRequiredVariantsInCart && variantError ? [variantError] : [])
-        ]
+          ...(!areRequiredVariantsInCart && variantError ? [variantError] : []),
+        ],
       };
     }
   }
@@ -1875,11 +1898,225 @@ function validateSingleDiscountCodeEnhanced(code, allDiscounts, subtotal, cartVa
     found: false,
     valid: false,
     code: code,
-    invalidReasons: ['Discount code not found']
+    invalidReasons: ["Discount code not found"],
   };
 }
 
+async function fetchRecentOrders(email, n) {
+  const myHeaders = new Headers();
+  myHeaders.append("Content-Type", "application/json");
+  myHeaders.append(
+    "X-Shopify-Access-Token",
+    process.env.SHOPIFY_ACCESS_TOKEN
+  );
 
+const raw = JSON.stringify({
+    query:
+      `query getOrdersByEmail($query: String!) { 
+        orders(first: ${n}, query: $query, sortKey: CREATED_AT, reverse: true) { 
+          edges { 
+            node { 
+              id 
+              name 
+              email 
+              createdAt
+              displayFinancialStatus
+              processedAt
+              displayFulfillmentStatus
+              updatedAt
+              totalPriceSet {
+                presentmentMoney {
+                  amount
+                  currencyCode
+                }
+              }
+              lineItems(first: 50) {
+                edges {
+                  node {
+                    id
+                    name
+                    quantity
+                    variant {
+                      id
+                      title
+                      sku
+                      price
+                      inventoryQuantity
+                      product {
+                        id
+                        title
+                        handle
+                      }
+                    }
+                  }
+                }
+              }
+            } 
+          } 
+        } 
+      }`,
+    variables: {
+      query: `email:${email}`,
+    },
+});
+
+  const requestOptions = {
+    method: "POST",
+    headers: myHeaders,
+    body: raw,
+    redirect: "follow",
+  };
+
+  try{
+  const res = await fetch(
+    "https://momdaughts.myshopify.com/admin/api/2025-04/graphql.json",
+    requestOptions
+  );
+  if (res.status >= 400) {
+    // throw new Error("Bad response from server");
+    return {
+      error: "Bad response from server",}
+  }
+  
+
+  const result = await res.json();
+  return result
+  }catch(e){
+    return {
+      error: "Bad response from server",
+    }
+    console.log(e)
+
+  }
+
+}
+
+
+
+async function fetchAllOrders(email, n) {
+  const myHeaders = new Headers();
+  myHeaders.append("Content-Type", "application/json");
+  myHeaders.append(
+    "X-Shopify-Access-Token",
+    process.env.SHOPIFY_ACCESS_TOKEN
+  );
+
+const raw = JSON.stringify({
+    query:
+      `query getOrdersByEmail($query: String!) { 
+        orders(first: ${n}, query: $query, sortKey: CREATED_AT, reverse: true) { 
+          edges { 
+            node { 
+              id 
+              name 
+              email 
+              createdAt
+              processedAt
+              displayFinancialStatus
+              displayFulfillmentStatus
+              updatedAt
+              totalPriceSet {
+                presentmentMoney {
+                  amount
+                  currencyCode
+                }
+              }
+              subtotalPriceSet {
+                presentmentMoney {
+                  amount
+                  currencyCode
+                }
+              }
+              totalShippingPriceSet {
+                presentmentMoney {
+                  amount
+                  currencyCode  
+                }
+              }
+              fulfillments {
+                id
+                status
+                createdAt
+                updatedAt
+              }
+              lineItems(first: 50) {
+                edges {
+                  node {
+                    id
+                    name
+                    quantity
+                    variant {
+                      id
+                      title
+                      sku
+                      price
+                      inventoryQuantity
+                      product {
+                        id
+                        title
+                        handle
+                      }
+                    }
+                    originalUnitPriceSet {
+                      presentmentMoney {
+                        amount
+                        currencyCode
+                      }
+                    }
+                    discountedUnitPriceSet {
+                      presentmentMoney {
+                        amount
+                        currencyCode
+                      }
+                    }
+                    totalDiscountSet {
+                      presentmentMoney {
+                        amount
+                        currencyCode
+                      }
+                    }
+                  }
+                }
+              }
+            } 
+          } 
+        } 
+      }`,
+    variables: {
+      query: `email:${email}`,
+    },
+});
+
+  const requestOptions = {
+    method: "POST",
+    headers: myHeaders,
+    body: raw,
+    redirect: "follow",
+  };
+
+  try{
+  const res = await fetch(
+    "https://momdaughts.myshopify.com/admin/api/2025-04/graphql.json",
+    requestOptions
+  );
+  if (res.status >= 400) {
+    // throw new Error("Bad response from server");
+    return {
+      error: "Bad response from server",}
+  }
+  
+
+  const result = await res.json();
+  return result
+  }catch(e){
+    return {
+      error: "Bad response from server",
+    }
+    console.log(e)
+
+  }
+
+}
 module.exports = {
   getProducts,
   getProduct,
@@ -1898,5 +2135,7 @@ module.exports = {
   formatDiscountData,
   validateSingleDiscountCode,
   canDiscountsCombine,
-  validateSingleDiscountCodeEnhanced
+  validateSingleDiscountCodeEnhanced,
+  fetchRecentOrders,
+  fetchAllOrders
 };

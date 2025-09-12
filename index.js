@@ -3,6 +3,9 @@ const fastify = require("fastify")({ logger: false });
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcrypt");
 const prisma = new PrismaClient();
+const { Resend } = require("resend");
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 const {
   getProducts,
   getProduct,
@@ -22,6 +25,8 @@ const {
   formatDiscountData,
   canDiscountsCombine,
   validateSingleDiscountCodeEnhanced,
+  fetchRecentOrders,
+  fetchAllOrders,
 } = require("./utils/actions");
 
 // Register plugins
@@ -61,7 +66,8 @@ fastify.decorate("authenticate", async function (request, reply) {
 
 fastify.get("/api", async (req, res) => {
   console.log("req.url", req.url);
-  return res.status(200).type("text/html").send(html);
+  res.send({ status: "running" });
+  // return res.status(200).type("text/html").send(html);
 });
 
 // GET Total Orders Count
@@ -106,6 +112,64 @@ fastify.get("/token", async (request, reply) => {
 
   return reply.send(b);
 });
+
+// GET All user orders
+fastify.get(
+  "/all-orders",
+  { preHandler: [fastify.authenticate] },
+  async (request, reply) => {
+    const start = Date.now();
+    const { email } = request.user;
+    const n = 250;
+    try {
+      const orders = await fetchAllOrders(email, n);
+      reply.send(orders);
+    } catch (error) {
+      request.log.error(error);
+      reply.status(500).send({ error: "Failed to fetch total orders" });
+    } finally {
+      const duration = Date.now() - start;
+      console.log(`GET /all-orders processed in ${duration}ms`);
+    }
+  }
+);
+
+// GET recent orders
+fastify.get(
+  "/recent-orders",
+  { preHandler: [fastify.authenticate] },
+  async (request, reply) => {
+    const start = Date.now();
+    const { email } = request.user;
+    const n = request.query.n || 5;
+    try {
+      const orders = await fetchRecentOrders(email, n);
+      const formattedOrders = orders.data.orders.edges.map((order) => {
+        const node = order.node;
+        const newOrder = {
+          id: parseInt(node.id.split("gid://shopify/Order/")[1]),
+          orderNumber: node.name,
+          createdAt: node.createdAt,
+          total: parseInt(node.totalPriceSet?.presentmentMoney?.amount) || 0,
+          itemsCount: parseInt(node.lineItems?.edges?.length) || 0,
+          status:
+            node.displayFulfillmentStatus.slice(0, 1).toUpperCase() +
+            node.displayFulfillmentStatus.slice(1).toLowerCase(),
+          financialStatus: node.displayFinancialStatus.slice(0, 1).toUpperCase() + node.displayFinancialStatus.slice(1).toLowerCase(),
+        };
+        return newOrder;
+      });
+
+      reply.send({ formattedOrders });
+    } catch (error) {
+      request.log.error(error);
+      reply.status(500).send({ error: "Failed to fetch total orders" });
+    } finally {
+      const duration = Date.now() - start;
+      console.log(`GET /recent-orders processed in ${duration}ms`);
+    }
+  }
+);
 
 // GET Total Wishlist Items Count
 fastify.get(
@@ -1016,6 +1080,200 @@ fastify.post("/", (request, reply) => {
   reply.send({ status: "running" });
 });
 
+// Send OTP
+fastify.post("/send-otp", async (request, reply) => {
+  const {
+    formattedData: { email, is_password_reset },
+  } = request.body;
+  // const userEmail = request.user.email; // From JWT
+
+  try {
+    // Generate new OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+    // Send OTP via email (assuming you have an email service)
+    const r = await resend.emails.send({
+      from: "MomDaughts <app@mail.momdaughts.com>",
+      to: [email],
+      subject: "OTP",
+      html: `
+  <div style="font-family: 'Poppins', 'Outfit', sans-serif; background-color:#ffffff; padding:20px; border-radius:12px; max-width:500px; margin:auto; border:1px solid #f5d6e0;">
+    <div style="text-align:center; margin-bottom:20px;">
+      <img src="https://i.ibb.co/3ynzj28Q/logo-belowtext.png" alt="MomDaughts" style="max-width:120px;"/>
+    </div>
+    <h2 style="color:#d63384; font-weight:600; text-align:center; margin:0 0 15px;">Your OTP Code</h2>
+    <p style="color:#333; font-size:16px; text-align:center; margin-bottom:20px;">
+      Use the following one-time password to continue:
+    </p>
+    <div style="background:#d63384; color:#fff; font-size:22px; font-weight:700; letter-spacing:3px; text-align:center; padding:15px; border-radius:8px; margin-bottom:20px;">
+      ${otp}
+    </div>
+    <p style="color:#555; font-size:14px; text-align:center; margin:0;">
+      This code will expire in <strong>5 minutes</strong>.
+    </p>
+    <hr style="border:none; border-top:1px solid #f5d6e0; margin:25px 0;"/>
+    <p style="color:#888; font-size:12px; text-align:center; line-height:1.5;">
+      If you didn’t request this code, you can safely ignore this email.  
+      <br/>With 💗 from <strong>MomDaughts</strong>.
+    </p>
+  </div>
+`,
+    });
+
+    if (r.error) {
+      return reply.status(500).send({ error: "Failed to send OTP" });
+    }
+
+    // Store OTP in database
+    await prisma.otp.create({
+      data: {
+        email: email,
+        otp,
+        expiresAt,
+        is_password_reset: is_password_reset,
+      },
+    });
+    console.log("OTP sent successfully", otp);
+    reply.send({ message: "OTP sent successfully" });
+  } catch (error) {
+    console.error("Send OTP error:", error);
+    reply.status(500).send({ error: "Failed to send OTP" });
+  }
+});
+
+// Verify OTP
+fastify.post("/verify-otp", async (request, reply) => {
+  const { otp, userEmail } = request.body;
+  console.log("OTP: ", otp, userEmail);
+
+  try {
+    // Find the OTP
+    const storedOtp = await prisma.otp.findFirst({
+      where: {
+        email: userEmail,
+        verified: false,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!storedOtp) {
+      return reply.status(400).send({ error: "OTP not found" });
+    }
+
+    // Check if expired
+    if (new Date() > storedOtp.expiresAt) {
+      await prisma.otp.delete({ where: { id: storedOtp.id } });
+      return reply.status(400).send({ error: "OTP expired" });
+    }
+
+    // Verify OTP
+    if (storedOtp.otp !== otp) {
+      return reply.status(400).send({ error: "Invalid OTP" });
+    }
+
+    // Mark as verified and delete
+    await prisma.otp.update({
+      where: { id: storedOtp.id },
+      data: { verified: true },
+    });
+
+    reply.send({ message: "OTP verified successfully" });
+  } catch (error) {
+    console.error("Verify OTP error:", error);
+    reply.status(500).send({ error: "Failed to verify OTP" });
+  }
+});
+
+// Reset Password
+fastify.post("/reset-password", async (request, reply) => {
+  const { email, otp, newPassword } = request.body;
+  const start = Date.now();
+  console.log("Data: ", request.body);
+
+  try {
+    const [user, dbOTP] = await prisma.$transaction([
+      prisma.user.findFirst({
+        where: { email },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          id: true,
+        },
+      }),
+      prisma.otp.findFirst({
+        where: {
+          email: email,
+          is_password_reset: true,
+          verified: true,
+          otp: otp,
+        },
+      }),
+    ]);
+
+    if (!dbOTP) {
+      return reply.status(400).send({ error: "Invalid OTP" });
+    }
+    if (!user) {
+      return reply.status(400).send({ error: "User not found, wrong email" });
+    }
+
+    const storedOtp = dbOTP;
+    console.log("Stored OTP:", storedOtp);
+    console.log("User:", user);
+
+    // Hash new password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    // Use transaction for atomicity
+    await prisma.$transaction([
+      // Update password
+      prisma.user.update({
+        where: { id: user.id },
+        data: { password: hashedPassword },
+      }),
+      // Invalidate all sessions for security
+      prisma.session.deleteMany({
+        where: { userId: user.id },
+      }),
+    ]);
+
+    reply.send({
+      message: "Password reset successfully",
+    });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    reply.status(500).send({ error: "Failed to reset password" });
+  } finally {
+    const duration = Date.now() - start;
+    const timeInSeconds = duration / 1000;
+    console.log(`POST /reset-password processed in ${timeInSeconds}s`);
+  }
+});
+
+// Route for RAW SQL Queries
+
+fastify.post(
+  "/raw-sql",
+  { preHandler: [fastify.authenticate] },
+  async (request, reply) => {
+    const start = Date.now();
+    const { query } = request.body;
+    try {
+      const result = await prisma.$queryRawUnsafe(query);
+      reply.send({ result });
+    } catch (error) {
+      console.log("Error: ", error);
+      request.log.error(error);
+      reply.status(500).send({ error: "Database error" });
+    } finally {
+      const duration = Date.now() - start;
+      console.log(`POST /raw-sql processed in ${duration}ms`);
+    }
+  }
+);
+
 // Route for appending customer shopify shipping address
 
 fastify.post(
@@ -1075,9 +1333,9 @@ fastify.post(
     const start = Date.now();
     try {
       const { userId } = request.user;
-      const address  = request.body;
+      const address = request.body;
       address.isDefault = address.useCurrentLocation ? true : false;
-      address.type = address.addressCategory
+      address.type = address.addressCategory;
       delete address.useCurrentLocation;
       delete address.addressCategory;
 
@@ -1350,7 +1608,8 @@ fastify.post(
 // User Signup
 fastify.post("/signup", async (request, reply) => {
   try {
-    const { email, password, firstName, lastName, authMethod } = request.body;
+    const { email, password, firstName, lastName, authMethod, phone } =
+      request.body;
     console.log("Signup request body:", request.body);
 
     if (!email || !password || !firstName || !lastName) {
@@ -1358,14 +1617,29 @@ fastify.post("/signup", async (request, reply) => {
         error: "Email, password, firstName, and lastName are required",
       });
     }
-    console.log("body:", request.body);
-    // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
+
+    // Check if user already exists with this email
+    const existingUserByEmail = await prisma.user.findUnique({
       where: { email },
     });
 
-    if (existingUser) {
-      return reply.status(409).send({ error: "User already exists" });
+    if (existingUserByEmail) {
+      return reply.status(409).send({
+        error: "User with this email already exists",
+      });
+    }
+
+    // Check if user already exists with this phone number (if phone is provided)
+    if (phone) {
+      const existingUserByPhone = await prisma.user.findFirst({
+        where: { phone },
+      });
+
+      if (existingUserByPhone) {
+        return reply.status(409).send({
+          error: "User with this phone number already exists",
+        });
+      }
     }
 
     // Hash password
@@ -1379,7 +1653,9 @@ fastify.post("/signup", async (request, reply) => {
         password: hashedPassword,
         firstName,
         lastName,
+        phone: phone,
         metaData: {
+          is_verified: false,
           ipl_onboarding_completed: false,
           authMethod: authMethod ? authMethod : "custom",
         },
@@ -1408,23 +1684,44 @@ fastify.post("/signup", async (request, reply) => {
     );
 
     reply.status(201).send({
+      success: true,
       token,
       user: {
         id: user.id,
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
-        metaData: user.metaData, // Ensure metaData is always present
+        phone: user.phone,
+        metaData: user.metaData,
       },
     });
   } catch (error) {
     console.error("Signup error:", error);
-    reply.status(500).send({ error: "Failed to create user" });
+
+    // Handle Prisma unique constraint violations
+    if (error.code === "P2002") {
+      const field = error.meta?.target?.[0];
+      if (field === "email") {
+        return reply.status(409).send({
+          error: "User with this email already exists",
+        });
+      } else if (field === "phone") {
+        return reply.status(409).send({
+          error: "User with this phone number already exists",
+        });
+      }
+    }
+
+    reply.status(500).send({
+      success: false,
+      error: "Failed to create user",
+    });
   }
 });
 
 // User Login
 fastify.post("/login", async (request, reply) => {
+  const start = Date.now();
   try {
     const { email, password } = request.body;
 
@@ -1476,6 +1773,7 @@ fastify.post("/login", async (request, reply) => {
         id: user.id,
         email: user.email,
         firstName: user.firstName,
+        phone: user.phone,
         lastName: user.lastName,
         metaData: user.metaData, // Ensure metaData is always present
       },
@@ -1483,6 +1781,11 @@ fastify.post("/login", async (request, reply) => {
   } catch (error) {
     request.log.error(error);
     reply.status(500).send({ error: "Login failed" });
+  } finally {
+    const end = Date.now();
+    const duration = end - start;
+    console.log(`Login request took ${duration}ms`);
+    console.log(request.body);
   }
 });
 
@@ -1548,6 +1851,29 @@ fastify.delete(
     } finally {
       const duration = Date.now() - start;
       console.log(`DELETE /address/${addressId} processed in ${duration}ms`);
+    }
+  }
+);
+
+// Delete Account
+fastify.delete(
+  "/delete-account",
+  { preHandler: [fastify.authenticate] },
+  async (request, reply) => {
+    const start = Date.now();
+    try {
+      const { userId } = request.user;
+      await prisma.user.delete({
+        where: { id: userId },
+      });
+      reply.send({ message: "Account deleted successfully" });
+    } catch (error) {
+      console.log("Error: ", error);
+      request.log.error(error);
+      reply.status(500).send({ error: "Failed to delete account" });
+    } finally {
+      const duration = Date.now() - start;
+      console.log(`DELETE /delete-account processed in ${duration}ms`);
     }
   }
 );
@@ -1690,44 +2016,3 @@ const start = async () => {
 
 start();
 
-const query = `
-  query {
-    codeDiscountNodes(first: 250) {
-      nodes {
-        id
-        codeDiscount {
-          ... on DiscountCodeBasic {
-            createdAt
-            title
-            summary
-            status
-            endsAt
-            customerGets {
-              appliesOnOneTimePurchase
-            }
-            codes(first: 10) {
-              nodes {
-                code
-                asyncUsageCount
-              }
-            }
-            minimumRequirement {
-              ... on DiscountMinimumSubtotal {
-                greaterThanOrEqualToSubtotal {
-                  amount
-                }
-              }
-            }
-          }
-          ... on DiscountCodeBxgy {
-            title
-            codesCount {
-              count
-              precision
-            }
-          }
-        }
-      }
-    }
-  }
-`;

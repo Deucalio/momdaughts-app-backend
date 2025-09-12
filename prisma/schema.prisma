@@ -10,6 +10,7 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
+  phone     String   @unique
   password  String
   firstName String
   lastName  String
@@ -197,4 +198,21 @@ model EducationalContent {
   updatedAt   DateTime @updatedAt
 
   @@map("educational_content")
+}
+
+
+model Otp {
+  id        String   @id @default(cuid())
+  email     String   
+  otp       String
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  is_password_reset Boolean
+
+
+  // Composite index for efficient queries
+  @@index([email, expiresAt])
+  @@map("otps")
 }
