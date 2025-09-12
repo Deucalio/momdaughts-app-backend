@@ -27,7 +27,7 @@ const {
   validateSingleDiscountCodeEnhanced,
   fetchRecentOrders,
   fetchAllOrders,
-} = require("./utils/actions");
+} = require("../utils/actions");
 
 // Register plugins
 fastify.register(require("@fastify/helmet"));
