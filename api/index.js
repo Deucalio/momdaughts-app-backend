@@ -1,10 +1,13 @@
 require("dotenv").config();
-const fastify = require("fastify")({ logger: false });
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcrypt");
 const prisma = new PrismaClient();
 const { Resend } = require("resend");
+import Fastify from 'fastify'
 
+const fastify = Fastify({
+  logger: true,
+})
 const resend = new Resend(process.env.RESEND_API_KEY);
 const {
   getProducts,
@@ -2013,24 +2016,8 @@ fastify.addHook("onClose", async () => {
   await prisma.$disconnect();
 });
 // Export handler for Vercel
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   await fastify.ready();
   fastify.server.emit("request", req, res);
 };
 
-
-
-
-// Routes
-// fastify.get("/", { schema: { hide: true } }, (_, reply) => {
-//   reply.send({ status: "running" });
-// });
-
-
-// GET Total Orders Count
-
-// module.exports = async function handler(req, res) {
-//   await fastify.ready();
-//   fastify.server.emit("request", req, res);
-// };
-// Start server
