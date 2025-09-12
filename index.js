@@ -59,18 +59,29 @@ fastify.decorate("authenticate", async function (request, reply) {
   }
 });
 
-// Routes
-// fastify.get("/", { schema: { hide: true } }, (_, reply) => {
-//   reply.send({ status: "running" });
-// });
 
-fastify.get("/api", async (req, res) => {
-  console.log("req.url", req.url);
-  res.send({ status: "running" });
-  // return res.status(200).type("text/html").send(html);
-});
+async function routes(fastify) {
+  // Root route
+  fastify.get("/", async (req, res) => {
+    console.log("req.url", req.url);
+    res.send({ status: "running" });
+  });
 
-// GET Total Orders Count
+  // GET Total Orders Count
+  fastify.get(
+    "/total-orders",
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      try {
+        // const totalOrders = await prisma.order.count();
+        // reply.send({ totalOrders });
+      } catch (error) {
+        request.log.error(error);
+        reply.status(500).send({ error: "Failed to fetch total orders" });
+      }
+    }
+  );
+
 fastify.get(
   "/total-orders",
   { preHandler: [fastify.authenticate] },
@@ -1990,29 +2001,36 @@ fastify.put(
     }
   }
 );
+}
+
+// Register routes with /api prefix
+fastify.register(routes, { prefix: '/api' });
+
+
 
 // Shutdown hooks
 fastify.addHook("onClose", async () => {
   await prisma.$disconnect();
 });
+// Export handler for Vercel
+module.exports = async function handler(req, res) {
+  await fastify.ready();
+  fastify.server.emit("request", req, res);
+};
+
+
+
+
+// Routes
+// fastify.get("/", { schema: { hide: true } }, (_, reply) => {
+//   reply.send({ status: "running" });
+// });
+
+
+// GET Total Orders Count
 
 // module.exports = async function handler(req, res) {
 //   await fastify.ready();
 //   fastify.server.emit("request", req, res);
 // };
 // Start server
-
-const start = async () => {
-  try {
-    await fastify.listen({
-      port: process.env.PORT || 3000,
-      host: "0.0.0.0",
-    });
-  } catch (err) {
-    fastify.log.error(err);
-    process.exit(1);
-  }
-};
-
-start();
-
