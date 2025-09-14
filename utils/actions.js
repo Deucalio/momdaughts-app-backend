@@ -2,6 +2,72 @@ const axios = require("axios");
 
 require("dotenv").config();
 
+const courier_companies = [
+  {
+    id: "leopards",
+    name: "Leopards Courier",
+    courier_code: "LCS",
+    courier_name: "Leopards Courier",
+    possible_matches: ["leopards", "leopards courier services", "lcs"],
+    color: "#FFA500",
+    logo: "https://trackmyorder.pk/leopards-logo.png",
+  },
+  {
+    id: "tcs",
+    name: "TCS Express",
+    courier_code: "TCS",
+    courier_name: "TCS Express",
+    possible_matches: ["tcs"],
+    color: "#FF0000",
+    logo: "https://trackmyorder.pk/TCS.svg",
+  },
+  {
+    id: "speedaf",
+    name: "Speedaf Express",
+    courier_code: "SPD",
+    courier_name: "Speedaf Express",
+    possible_matches: ["speedaf", "speedaf courier services", "spd"],
+    color: "#ff9d36",
+    logo: "https://trackmyorder.pk/speedaf-logo.png",
+  },
+  {
+    id: "rgs",
+    name: "RGS Logistics",
+    courier_code: "RGS",
+    courier_name: "RGS Logistics",
+    possible_matches: ["rgs"],
+    color: "#ffffff",
+    logo: "https://trackmyorder.pk/rgs.jpg",
+  },
+  {
+    id: "mnp",
+    name: "M&P Courier",
+    courier_code: "MNP",
+    courier_name: "M&P Courier",
+    possible_matches: ["mnp", "m&p", "m & p", "mnp courier"],
+    color: "#ffffff",
+    logo: "https://trackmyorder.pk/mnp-logo.png",
+  },
+  {
+    id: "fastex",
+    name: "Daewoo Fastex",
+    courier_code: "FTX",
+    courier_name: "Daewoo Fastex",
+    possible_matches: ["fastex", "daewoo fastex", "ftx"],
+    color: "#FFFFFF",
+    logo: "https://trackmyorder.pk/fastex-logo.png",
+  },
+  {
+    id: "instaworld",
+    name: "Instaworld",
+    courier_code: "INW",
+    courier_name: "Instaworld",
+    possible_matches: ["instaworld", "inw", "instalogistics"],
+    color: "#FFFFFF",
+    logo: "https://trackmyorder.pk/instaworld-logo.png",
+  },
+];
+
 const getProductsDirectly = (productIds, query = null) => {
   // Format IDs as proper Shopify GIDs
   const formattedIds = productIds.map((id) =>
@@ -2010,6 +2076,7 @@ const raw = JSON.stringify({
               id 
               name 
               email 
+              paymentGatewayNames
               createdAt
               processedAt
               displayFinancialStatus
@@ -2033,11 +2100,50 @@ const raw = JSON.stringify({
                   currencyCode  
                 }
               }
-              fulfillments {
+
+              shippingAddress {
+                address1
+                address2
+                city
+                firstName
+                lastName
+                phone
+                province
+
+              }
+
+                billingAddress {
+                address1
+                address2
+                city
+                firstName
+                lastName
+                phone
+                province
+
+              }
+
+
+              fulfillments (first:250) {
                 id
-                status
                 createdAt
                 updatedAt
+                displayStatus
+                trackingInfo (first:250){
+                    number
+                    company
+                  }
+                fulfillmentLineItems (first:250) {
+                  edges {
+                    node {
+                      id
+                      lineItem {
+                        id
+                      }
+                    }  
+                  }
+                }
+                
               }
               lineItems(first: 50) {
                 edges {
@@ -2050,26 +2156,12 @@ const raw = JSON.stringify({
                       title
                       sku
                       price
-                      inventoryQuantity
+                      image {id url}
                       product {
                         id
-                        title
-                        handle
                       }
                     }
                     originalUnitPriceSet {
-                      presentmentMoney {
-                        amount
-                        currencyCode
-                      }
-                    }
-                    discountedUnitPriceSet {
-                      presentmentMoney {
-                        amount
-                        currencyCode
-                      }
-                    }
-                    totalDiscountSet {
                       presentmentMoney {
                         amount
                         currencyCode
@@ -2083,6 +2175,7 @@ const raw = JSON.stringify({
         } 
       }`,
     variables: {
+      // query: `email:${"iqra.khan4270@gmail.com"}`,
       query: `email:${email}`,
     },
 });
@@ -2117,6 +2210,290 @@ const raw = JSON.stringify({
   }
 
 }
+
+async function fetchSingleOrder(orderId) {
+  const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
+
+  const headers = {
+    "Content-Type": "application/json",
+    "X-Shopify-Access-Token": SHOPIFY_ACCESS_TOKEN,
+  };
+
+  const query = `
+    query {
+      order(id: "gid://shopify/Order/${orderId}") {
+        id
+        name
+        email
+        paymentGatewayNames
+        createdAt
+        processedAt
+        displayFinancialStatus
+        displayFulfillmentStatus
+        updatedAt
+        totalPriceSet {
+          presentmentMoney {
+            amount
+            currencyCode
+          }
+        }
+        subtotalPriceSet {
+          presentmentMoney {
+            amount
+            currencyCode
+          }
+        }
+        totalShippingPriceSet {
+          presentmentMoney {
+            amount
+            currencyCode  
+          }
+        }
+        shippingAddress {
+          address1
+          address2
+          city
+          firstName
+          lastName
+          phone
+          province
+        }
+        billingAddress {
+          address1
+          address2
+          city
+          firstName
+          lastName
+          phone
+          province
+        }
+        fulfillments (first:250) {
+          id
+          createdAt
+          updatedAt
+          displayStatus
+          trackingInfo (first:250){
+            number
+            company
+          }
+          fulfillmentLineItems (first:250) {
+            edges {
+              node {
+                id
+                lineItem {
+                  id
+                }
+              }  
+            }
+          }
+        }
+        lineItems(first: 50) {
+          edges {
+            node {
+              id
+              name
+              quantity
+              variant {
+                id
+                title
+                sku
+                price
+                image { id url }
+                product {
+                  id
+                }
+              }
+              originalUnitPriceSet {
+                presentmentMoney {
+                  amount
+                  currencyCode
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const body = JSON.stringify({ query });
+
+  try {
+    const res = await fetch(
+      "https://momdaughts.myshopify.com/admin/api/2025-07/graphql.json",
+      {
+        method: "POST",
+        headers,
+        body,
+      }
+    );
+
+    if (!res.ok) {
+      return {
+        error: `Shopify returned status ${res.status}`,
+      };
+    }
+
+    const data = await res.json();
+    return data;
+  } catch (error) {
+    console.error("Error fetching order:", error);
+    return { error: "Failed to fetch order" };
+  }
+}
+
+function formatOrdersData(ordersResponse) {
+  const orders = ordersResponse.data.orders.edges;
+  
+  return orders.map(orderEdge => {
+    const order = orderEdge.node;
+    
+    // Determine order status
+    let orderStatus;
+    if (order.displayFinancialStatus === "VOIDED") {
+      orderStatus = "Cancelled";
+    } else {
+      // Map fulfillment status to user-friendly terms
+      switch (order.displayFulfillmentStatus) {
+        case "FULFILLED":
+          orderStatus = "Fulfilled";
+          break;
+        case "UNFULFILLED":
+          orderStatus = "Unfulfilled";
+          break;
+        case "PARTIALLY_FULFILLED":
+          orderStatus = "Partially Fulfilled";
+          break;
+        default:
+          orderStatus = order.displayFulfillmentStatus.slice(0, 1).toUpperCase() + order.displayFulfillmentStatus.slice(1).toLowerCase() || "Unknown";
+      }
+    }
+    
+    // Process line items
+    const lineItems = order.lineItems.edges.map(lineItemEdge => {
+      const lineItem = lineItemEdge.node;
+      return {
+        id: lineItem.id,
+        name: lineItem.name,
+        quantity: lineItem.quantity,
+        unitPrice: parseFloat(lineItem.originalUnitPriceSet.presentmentMoney.amount),
+        totalPrice: parseFloat(lineItem.originalUnitPriceSet.presentmentMoney.amount) * lineItem.quantity,
+        currency: lineItem.originalUnitPriceSet.presentmentMoney.currencyCode,
+        variant: {
+          id: lineItem.variant.id,
+          title: lineItem.variant.title,
+          sku: lineItem.variant.sku,
+          price: parseFloat(lineItem.variant.price),
+          image: lineItem.variant.image ? {
+            id: lineItem.variant.image.id,
+            url: lineItem.variant.image.url
+          } : null,
+          productId: lineItem.variant.product.id
+        }
+      };
+    });
+    
+    // Process fulfillments (only if order is not cancelled)
+    let fulfillments = [];
+    let fulfilledItems = [];
+    
+    if (order.displayFinancialStatus !== "VOIDED" && order.fulfillments) {
+      fulfillments = order.fulfillments.map(fulfillment => ({
+        id: fulfillment.id,
+        createdAt: fulfillment.createdAt,
+        updatedAt: fulfillment.updatedAt,
+        status: fulfillment.displayStatus,
+        fulfilledLineItemIds: fulfillment.fulfillmentLineItems.edges.map(
+          edge => edge.node.lineItem.id
+        )
+      }));
+      
+      // Create a list of fulfilled items with their details
+      const fulfilledLineItemIds = new Set();
+      fulfillments.forEach(fulfillment => {
+        fulfillment.fulfilledLineItemIds.forEach(id => fulfilledLineItemIds.add(id));
+      });
+      
+      fulfilledItems = lineItems.filter(item => fulfilledLineItemIds.has(item.id));
+    }
+    
+    // For cancelled orders, all line items are considered as the "items" since there are no fulfillments
+    const displayItems = orderStatus === "Cancelled" ? lineItems : fulfilledItems;
+  
+    let trackingInfo = order?.fulfillments[0]?.trackingInfo[0];
+    if (trackingInfo && trackingInfo.company) {
+      let courierCode = getCourierCode(trackingInfo.company.toLowerCase()); 
+      let courierName = getCourierName(trackingInfo.company.toLowerCase());
+      let courierInfo = getCourierDetails(trackingInfo.company.toLowerCase());
+      
+      trackingInfo.courierCode = courierCode;
+      trackingInfo.courierName = courierName;
+      trackingInfo.logoUrl = courierInfo.logo;
+      trackingInfo.color = courierInfo.color;
+    }
+
+    return {
+      id: order.id,
+      orderNumber: order.name,
+      email: order.email,
+      status: orderStatus,
+      shippingAddress: order?.shippingAddress,
+      billingAddress: order?.billingAddress,
+      trackingInfo: order?.fulfillments[0]?.trackingInfo[0],
+      financialStatus: order.displayFinancialStatus.slice(0, 1).toUpperCase() + order.displayFinancialStatus.slice(1).toLowerCase(),
+        paymentGateway: order?.paymentGatewayNames[0],
+      // fulfillmentStatus: order.displayFulfillmentStatus,
+      createdAt: order.createdAt,
+      processedAt: order.processedAt,
+      updatedAt: order.updatedAt,
+      pricing: {
+        // subtotal: parseFloat(order.subtotalPriceSet.presentmentMoney.amount),
+        // shipping: parseFloat(order.totalShippingPriceSet.presentmentMoney.amount),
+        total: parseFloat(order.totalPriceSet.presentmentMoney.amount),
+        currency: order.totalPriceSet.presentmentMoney.currencyCode
+      },
+      // lineItems: lineItems,
+      fulfillments: fulfillments,
+      displayItems: displayItems, // Items to show based on order status
+      itemCount: lineItems.reduce((sum, item) => sum + item.quantity, 0),
+      fulfilledItemCount: fulfilledItems.reduce((sum, item) => sum + item.quantity, 0)
+    };
+  });
+}
+
+
+
+function getCourierCode(companyName) {
+  const normalized = typeof companyName === "string" ? companyName.toLowerCase().trim() : "";
+  for (const courier of courier_companies) {
+    if (courier.possible_matches.some(match => match.toLowerCase().trim() === normalized)) {
+      return courier.courier_code;
+    }
+  }
+  return "UNKNOWN";
+}
+
+function getCourierName(companyName) {
+  const normalized = typeof companyName === "string" ? companyName.toLowerCase().trim() : "";
+  for (const courier of courier_companies) {
+    if (courier.possible_matches.some(match => match.toLowerCase().trim() === normalized)) {
+      return courier.courier_name;
+    }
+  }
+  return "Unknown";
+}
+
+
+
+function getCourierDetails(companyName) {
+  const normalized = typeof companyName === "string" ? companyName.toLowerCase().trim() : "";
+  return (
+    courier_companies.find(courier =>
+      courier.possible_matches.some(match => match.toLowerCase().trim() === normalized)
+    ) || null
+  );
+}
+
 module.exports = {
   getProducts,
   getProduct,
@@ -2137,5 +2514,7 @@ module.exports = {
   canDiscountsCombine,
   validateSingleDiscountCodeEnhanced,
   fetchRecentOrders,
-  fetchAllOrders
+  fetchAllOrders,
+  formatOrdersData,
+  fetchSingleOrder
 };
